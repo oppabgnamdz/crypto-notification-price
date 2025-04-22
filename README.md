@@ -30,7 +30,7 @@ cp .env.example .env
 
 ```
 BOT_TOKEN=your_telegram_bot_token
-MONGODB_URI=mongodb://mongodb:27017/telegram-price-bot
+MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/database
 GITHUB_TOKEN=ghp_your_github_personal_access_token
 GIST_ID=your_gist_id
 ```
@@ -60,16 +60,12 @@ npm install
 
 ```
 BOT_TOKEN=your_telegram_bot_token
-MONGODB_URI=mongodb://localhost:27017/telegram-price-bot
+MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/database
 GITHUB_TOKEN=ghp_your_github_personal_access_token
 GIST_ID=your_gist_id
 ```
 
-4. Khởi động MongoDB:
-
-- Đảm bảo MongoDB đã được cài đặt và đang chạy
-
-5. Build và chạy dự án:
+4. Build và chạy dự án:
 
 ```bash
 npm run build
@@ -95,13 +91,14 @@ npm start
 
 1. Đảm bảo server đã cài đặt Docker và Docker Compose
 2. Clone repository và cấu hình như hướng dẫn ở phần Cài đặt với Docker
-3. Khởi động dịch vụ:
+3. Đảm bảo bạn đã có một cơ sở dữ liệu MongoDB từ xa (như MongoDB Atlas)
+4. Khởi động dịch vụ:
 
 ```bash
 docker-compose up -d
 ```
 
-4. Kiểm tra logs để đảm bảo dịch vụ hoạt động đúng:
+5. Kiểm tra logs để đảm bảo dịch vụ hoạt động đúng:
 
 ```bash
 docker-compose logs -f

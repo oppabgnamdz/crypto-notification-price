@@ -1,18 +1,6 @@
 version: '3.8'
 
 services:
-  # MongoDB
-  mongodb:
-    image: mongo:6
-    container_name: notification-price-bot-mongodb
-    restart: always
-    volumes:
-      - mongodb_data:/data/db
-    ports:
-      - '27017:27017'
-    networks:
-      - bot-network
-
   # Ứng dụng Bot
   app:
     build:
@@ -20,16 +8,10 @@ services:
       dockerfile: Dockerfile
     container_name: notification-price-bot
     restart: always
-    depends_on:
-      - mongodb
     env_file:
       - .env
-    networks:
-      - bot-network
-
-networks:
-  bot-network:
-    driver: bridge
+    volumes:
+      - app_logs:/app/logs
 
 volumes:
-  mongodb_data:
+  app_logs:
