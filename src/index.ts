@@ -1,11 +1,16 @@
 import { Telegraf, Markup, Context } from 'telegraf';
 import config from './config';
 import { connectToDatabase } from './controllers/database';
-import { createNotification } from './controllers/notification';
+import {
+	createNotification,
+	getUserNotifications,
+	deleteNotification,
+} from './controllers/notification';
 import { UserContext, ConversationState } from './models/userContext';
 import { AlertType } from './models/notification';
 import { getTokenNotificationsFromGist } from './controllers/gist';
 import { initializeGist } from './controllers/initGist';
+import { startPriceMonitoring, checkPrices } from './services/priceMonitor';
 
 // Biến để kiểm tra trạng thái của bot
 let isBotRunning = false;
@@ -38,6 +43,89 @@ const startBot = async () => {
 			ctx.reply(
 				'Chào mừng đến với Bot thông báo giá! Vui lòng nhập ký hiệu token bạn muốn theo dõi (ví dụ: BTC, ETH):'
 			);
+		});
+
+		// Thêm lệnh /myalerts để hiển thị tất cả thông báo của người dùng
+		bot.command('myalerts', async (ctx) => {
+			const userId = ctx.from.id;
+
+			try {
+				// Lấy tất cả thông báo của người dùng
+				const notifications = await getUserNotifications(userId);
+
+				if (notifications.length === 0) {
+					ctx.reply(
+						'Bạn chưa thiết lập thông báo nào. Sử dụng lệnh /start để tạo thông báo mới.'
+					);
+					return;
+				}
+
+				let message = '📊 *DANH SÁCH THÔNG BÁO CỦA BẠN* 📊\n\n';
+
+				notifications.forEach((notification, index) => {
+					const alertType =
+						notification.alertType === AlertType.ABOVE
+							? 'vượt trên'
+							: 'xuống dưới';
+
+					message += `*${index + 1}. ${notification.tokenSymbol}*\n`;
+					message += `   Điều kiện: Giá ${alertType} $${notification.targetPrice}\n`;
+					message += `   ID: \`${notification._id}\`\n\n`;
+				});
+
+				message +=
+					'Để xóa một thông báo, hãy sử dụng lệnh: `/delete ID_THÔNG_BÁO`';
+
+				ctx.reply(message, { parse_mode: 'Markdown' });
+			} catch (error) {
+				console.error('Lỗi khi lấy danh sách thông báo:', error);
+				ctx.reply('Đã xảy ra lỗi khi lấy danh sách thông báo của bạn.');
+			}
+		});
+
+		// Thêm lệnh /delete để xóa một thông báo
+		bot.command('delete', async (ctx) => {
+			const userId = ctx.from.id;
+			const messageText = ctx.message.text.trim();
+			const parts = messageText.split(' ');
+
+			if (parts.length !== 2) {
+				ctx.reply(
+					'Cú pháp không đúng. Vui lòng sử dụng: `/delete ID_THÔNG_BÁO`'
+				);
+				return;
+			}
+
+			const notificationId = parts[1];
+
+			try {
+				// Xác minh thông báo tồn tại và thuộc về người dùng này
+				const notifications = await getUserNotifications(userId);
+				const targetNotification = notifications.find(
+					(n) => n._id.toString() === notificationId
+				);
+
+				if (!targetNotification) {
+					ctx.reply(
+						'Không tìm thấy thông báo với ID đã cung cấp hoặc thông báo không thuộc về bạn.'
+					);
+					return;
+				}
+
+				// Xóa thông báo
+				const success = await deleteNotification(notificationId);
+
+				if (success) {
+					ctx.reply(
+						`✅ Đã xóa thành công thông báo cho ${targetNotification.tokenSymbol}.`
+					);
+				} else {
+					ctx.reply('Không thể xóa thông báo. Vui lòng thử lại sau.');
+				}
+			} catch (error) {
+				console.error('Lỗi khi xóa thông báo:', error);
+				ctx.reply('Đã xảy ra lỗi khi xóa thông báo.');
+			}
 		});
 
 		// Thêm lệnh /listgist để hiển thị dữ liệu từ GitHub Gist
@@ -75,6 +163,43 @@ const startBot = async () => {
 			} catch (error) {
 				console.error('Lỗi khi khởi tạo Gist:', error);
 				ctx.reply('Đã xảy ra lỗi khi khởi tạo GitHub Gist.');
+			}
+		});
+
+		// Thêm lệnh /forceprice để kiểm tra luồng xử lý giá
+		bot.command('forceprice', async (ctx) => {
+			try {
+				console.log(
+					'\n[MANUAL] Bắt đầu kiểm tra giá theo yêu cầu người dùng...'
+				);
+				const userId = ctx.from.id;
+
+				// Lấy thông báo của người dùng này
+				const notifications = await getUserNotifications(userId);
+
+				if (notifications.length === 0) {
+					ctx.reply(
+						'Bạn chưa thiết lập thông báo nào. Sử dụng lệnh /start để tạo thông báo.'
+					);
+					return;
+				}
+
+				// Báo cáo cho người dùng
+				ctx.reply(
+					`Đang kiểm tra ${notifications.length} thông báo của bạn. Vui lòng đợi...`
+				);
+
+				// Gọi trực tiếp hàm checkPrices để kiểm tra ngay lập tức
+				await checkPrices(bot);
+
+				console.log('[MANUAL] Đã hoàn tất kiểm tra giá theo yêu cầu');
+				// Thông báo hoàn tất
+				ctx.reply(
+					'Đã hoàn tất kiểm tra giá. Nếu có token nào đạt ngưỡng, bạn sẽ nhận được thông báo.'
+				);
+			} catch (error) {
+				console.error('[ERROR] Lỗi khi kiểm tra giá thủ công:', error);
+				ctx.reply('Đã xảy ra lỗi trong quá trình kiểm tra giá.');
 			}
 		});
 
@@ -199,11 +324,28 @@ const startBot = async () => {
 
 		// Khởi động bot
 		await bot.launch();
+		console.log('🤖 Bot Telegram đã khởi động thành công!');
 		isBotRunning = true;
-		console.log('Bot đã khởi động thành công!');
+
+		// Khởi động luồng theo dõi giá token
+		console.log('⏱️ Bắt đầu luồng theo dõi giá (kiểm tra mỗi 30 giây)...');
+		console.log(
+			'📌 Kiểm tra xem hàm startPriceMonitoring có được định nghĩa không:',
+			typeof startPriceMonitoring === 'function' ? 'Có' : 'Không'
+		);
+		try {
+			startPriceMonitoring(bot);
+			console.log('✅ Đã khởi động thành công luồng theo dõi giá.');
+		} catch (monitoringError) {
+			console.error(
+				'❌ Lỗi khi khởi động luồng theo dõi giá:',
+				monitoringError
+			);
+		}
+		console.log('✅ Hệ thống đã sẵn sàng và đang chạy.');
 	} catch (error) {
+		console.error('Lỗi khi khởi động bot:', error);
 		isBotRunning = false;
-		console.error('Lỗi khởi động bot:', error);
 	}
 };
 

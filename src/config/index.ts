@@ -9,4 +9,6 @@ export default {
 	mongodbUri: process.env.MONGODB_URI || '',
 	githubToken: process.env.GITHUB_TOKEN || '',
 	gistId: process.env.GIST_ID || '',
+	// API key CoinGecko là tùy chọn, phiên bản miễn phí vẫn hoạt động bình thường
+	coinGeckoApiKey: process.env.COINGECKO_API_KEY || '',
 };
