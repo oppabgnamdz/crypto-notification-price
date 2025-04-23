@@ -194,31 +194,56 @@ const startBot = async () => {
 			}
 		});
 
-		// Thêm lệnh để khởi động lại service theo dõi giá
+		// Thêm debug log để theo dõi khi lệnh được gọi
 		bot.command('startmonitor', async (ctx) => {
 			try {
 				// Kiểm tra quyền admin (tuỳ chọn)
 				const userId = ctx.from.id;
-				// Có thể thêm kiểm tra quyền admin ở đây nếu cần
+				console.log(`[COMMAND] User ${userId} đã yêu cầu khởi động service theo dõi giá`);
+				
+				// Kiểm tra trạng thái hiện tại
+				const wasActive = isMonitoringActive();
+				console.log(`[COMMAND] Trạng thái service trước khi khởi động: ${wasActive ? 'Đang hoạt động' : 'Không hoạt động'}`);
 
-				if (isMonitoringActive()) {
+				if (wasActive) {
 					ctx.reply('⚠️ Service theo dõi giá đã đang hoạt động.');
 					return;
 				}
 
-				startPriceMonitoring(bot);
+				// Thử khởi động service và ghi log chi tiết
+				console.log('[COMMAND] Đang gọi hàm startPriceMonitoring...');
+				try {
+					startPriceMonitoring(bot);
+					console.log('[COMMAND] Đã gọi hàm startPriceMonitoring thành công');
+				} catch (startError) {
+					console.error('[COMMAND] Lỗi khi gọi startPriceMonitoring:', startError);
+					throw startError; // Re-throw để xử lý ở catch bên ngoài
+				}
 
-				if (isMonitoringActive()) {
+				// Kiểm tra trạng thái sau khi khởi động
+				const isActive = isMonitoringActive();
+				console.log(`[COMMAND] Trạng thái service sau khi khởi động: ${isActive ? 'Đang hoạt động' : 'Không hoạt động'}`);
+
+				if (isActive) {
 					ctx.reply('✅ Đã khởi động service theo dõi giá thành công.');
-					console.log(
-						`[ADMIN] User ${userId} đã khởi động service theo dõi giá.`
-					);
+					console.log(`[ADMIN] User ${userId} đã khởi động service theo dõi giá.`);
+					
+					// Thử gọi checkPrices một lần để kiểm tra xem nó có hoạt động không
+					setTimeout(async () => {
+						try {
+							console.log('[COMMAND] Thực hiện kiểm tra giá đầu tiên sau khi khởi động...');
+							await checkPrices(bot);
+							console.log('[COMMAND] Đã hoàn tất kiểm tra giá đầu tiên sau khi khởi động');
+						} catch (checkError) {
+							console.error('[COMMAND] Lỗi khi kiểm tra giá ban đầu:', checkError);
+						}
+					}, 2000);
 				} else {
-					ctx.reply('❌ Không thể khởi động service theo dõi giá.');
+					ctx.reply('❌ Không thể khởi động service theo dõi giá - Biến trạng thái không được cập nhật.');
 				}
 			} catch (error) {
 				console.error('[ERROR] Lỗi khi khởi động service theo dõi giá:', error);
-				ctx.reply('Đã xảy ra lỗi khi khởi động service.');
+				ctx.reply(`❌ Đã xảy ra lỗi khi khởi động service: ${error instanceof Error ? error.message : 'Lỗi không xác định'}`);
 			}
 		});
 

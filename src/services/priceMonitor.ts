@@ -298,3 +298,6 @@ export async function checkPrices(bot: Telegraf): Promise<void> {
 		console.error('[ERROR] Lỗi trong quá trình theo dõi giá:', error);
 	}
 }
+
+// Xuất priceCache và apiCallCount để có thể truy cập từ bên ngoài
+export { priceCache, apiCallCount };
