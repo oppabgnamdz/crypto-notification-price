@@ -159,23 +159,35 @@ export const startPriceMonitoring = (bot: Telegraf): void => {
 	console.log('\n=================================================');
 	console.log('🔄 KHỞI ĐỘNG THEO DÕI GIÁ TOKEN');
 	console.log('=================================================');
-	console.log(
-		'[MONITOR] Hệ thống sẽ kiểm tra mỗi 30 giây và gửi thông báo khi đạt ngưỡng giá'
-	);
-	console.log('[MONITOR] Bắt đầu vòng lặp kiểm tra đầu tiên...');
-
+	console.log('[MONITOR] Hệ thống sẽ kiểm tra mỗi 30 giây và gửi thông báo khi đạt ngưỡng giá');
+	
 	// Đánh dấu service đang hoạt động
 	monitoringActive = true;
 
 	// Thực hiện kiểm tra ngay lập tức khi khởi động
+	console.log('[MONITOR] Thực hiện kiểm tra đầu tiên...');
+	
+	// Chạy một kiểm tra ngay lập tức, nhưng đảm bảo không chặn luồng chính
 	setTimeout(async () => {
-		await checkPrices(bot);
+		try {
+			await checkPrices(bot);
+			console.log('[STARTUP] Kiểm tra đầu tiên hoàn tất');
+		} catch (error) {
+			console.error('[ERROR] Lỗi khi thực hiện kiểm tra ban đầu:', error);
+		}
 	}, 1000);
 
 	// Thiết lập interval để chạy kiểm tra mỗi 30 giây
 	monitoringIntervalId = setInterval(async () => {
-		await checkPrices(bot);
+		try {
+			console.log('\n[INTERVAL] Thực hiện kiểm tra định kỳ...');
+			await checkPrices(bot);
+		} catch (error) {
+			console.error('[ERROR] Lỗi trong interval kiểm tra giá:', error);
+		}
 	}, 30000); // 30 giây
+
+	console.log(`[MONITOR] Đã thiết lập interval với ID: ${monitoringIntervalId}`);
 
 	// Xử lý khi ứng dụng kết thúc
 	const cleanup = () => {
@@ -215,34 +227,27 @@ export async function checkPrices(bot: Telegraf): Promise<void> {
 		const activeNotifications = await Notification.find({ isActive: true });
 
 		if (activeNotifications.length === 0) {
-			console.log(
-				'[MONITOR] Không có thông báo nào đang hoạt động để kiểm tra'
-			);
+			console.log('[MONITOR] Không có thông báo nào đang hoạt động để kiểm tra');
 			return; // Không có thông báo nào để kiểm tra
 		}
 
-		console.log(
-			`[MONITOR] Tìm thấy ${activeNotifications.length} thông báo đang hoạt động`
-		);
+		console.log(`[MONITOR] Tìm thấy ${activeNotifications.length} thông báo đang hoạt động`);
 
 		// Nhóm các thông báo theo token để tránh gọi API nhiều lần cho cùng một token
-		const tokenGroups = activeNotifications.reduce<
-			Record<string, typeof activeNotifications>
-		>((groups, notification) => {
-			const symbol = notification.tokenSymbol;
-			if (!groups[symbol]) {
-				groups[symbol] = [];
-			}
-			groups[symbol].push(notification);
-			return groups;
-		}, {});
+		const tokenGroups = activeNotifications.reduce<Record<string, typeof activeNotifications>>(
+			(groups, notification) => {
+				const symbol = notification.tokenSymbol;
+				if (!groups[symbol]) {
+					groups[symbol] = [];
+				}
+				groups[symbol].push(notification);
+				return groups;
+			},
+			{}
+		);
 
 		const tokenSymbols = Object.keys(tokenGroups);
-		console.log(
-			`[MONITOR] Token cần kiểm tra (${tokenSymbols.length}): ${tokenSymbols.join(
-				', '
-			)}`
-		);
+		console.log(`[MONITOR] Token cần kiểm tra (${tokenSymbols.length}): ${tokenSymbols.join(', ')}`);
 
 		// Xử lý từng nhóm token
 		for (const [symbol, notifications] of Object.entries(tokenGroups)) {
@@ -256,45 +261,34 @@ export async function checkPrices(bot: Telegraf): Promise<void> {
 			}
 
 			console.log(`[MONITOR] Giá hiện tại của ${symbol}: $${price}`);
-			console.log(
-				`[MONITOR] Kiểm tra ${notifications.length} thông báo cho ${symbol}`
-			);
+			console.log(`[MONITOR] Kiểm tra ${notifications.length} thông báo cho ${symbol}`);
 
 			// Kiểm tra mỗi thông báo cho token này
 			for (const notification of notifications) {
 				const { userId, targetPrice, alertType } = notification;
 
-				// Kiểm tra điều kiện cảnh báo
-				const shouldAlert =
-					(alertType === AlertType.ABOVE && price >= targetPrice) ||
-					(alertType === AlertType.BELOW && price <= targetPrice);
+				try {
+					// Kiểm tra điều kiện cảnh báo một cách rõ ràng hơn
+					let shouldAlert = false;
+					
+					if (alertType === AlertType.ABOVE && price >= targetPrice) {
+						console.log(`[TRIGGER] Giá ${symbol} ($${price}) ≥ ngưỡng trên ($${targetPrice})`);
+						shouldAlert = true;
+					} else if (alertType === AlertType.BELOW && price <= targetPrice) {
+						console.log(`[TRIGGER] Giá ${symbol} ($${price}) ≤ ngưỡng dưới ($${targetPrice})`);
+						shouldAlert = true;
+					}
 
-				const condition = alertType === AlertType.ABOVE ? '>=' : '<=';
-				console.log(
-					`[MONITOR] Kiểm tra: $${price} ${condition} $${targetPrice} = ${
-						shouldAlert ? 'CẢNH BÁO!' : 'chưa đạt ngưỡng'
-					}`
-				);
-
-				if (shouldAlert) {
-					console.log(
-						`[ALERT] Gửi cảnh báo cho user ${userId} về token ${symbol}`
-					);
-					// Gửi thông báo đến user
-					await sendNotification(
-						bot,
-						userId,
-						symbol,
-						price,
-						targetPrice,
-						alertType
-					);
-
-					// Ghi chú: Có thể cập nhật trạng thái thông báo sau khi gửi thông báo
-					// Ví dụ:
-					// console.log(`[MONITOR] Đã gửi thông báo, cập nhật trạng thái thông báo thành không hoạt động`);
-					// notification.isActive = false;
-					// await notification.save();
+					if (shouldAlert) {
+						console.log(`[ALERT] Gửi cảnh báo cho user ${userId} về token ${symbol}`);
+						// Gửi thông báo đến user - đảm bảo hàm này hoạt động đúng
+						await sendNotification(bot, userId, symbol, price, targetPrice, alertType);
+						console.log(`[ALERT] Đã gửi cảnh báo thành công cho user ${userId}`);
+					} else {
+						console.log(`[CHECK] ${symbol}: $${price} chưa đạt ngưỡng $${targetPrice} (${alertType})`);
+					}
+				} catch (notifyError) {
+					console.error(`[ERROR] Lỗi khi xử lý thông báo cho ${symbol}:`, notifyError);
 				}
 			}
 		}

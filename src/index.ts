@@ -7,7 +7,7 @@ import {
 	deleteNotification,
 } from './controllers/notification';
 import { UserContext, ConversationState } from './models/userContext';
-import { AlertType } from './models/notification';
+import Notification, { AlertType } from './models/notification';
 import {
 	startPriceMonitoring,
 	checkPrices,
@@ -229,6 +229,62 @@ const startBot = async () => {
 				: '❌ Service theo dõi giá đang DỪNG';
 
 			ctx.reply(status);
+		});
+
+		// Thêm lệnh để kiểm tra chi tiết service theo dõi giá
+		bot.command('monitordetail', async (ctx) => {
+			try {
+				const status = isMonitoringActive()
+					? '✅ Service theo dõi giá đang HOẠT ĐỘNG'
+					: '❌ Service theo dõi giá đang DỪNG';
+				
+				// Lấy số lượng thông báo đang hoạt động
+				const activeNotifications = await Notification.find({ isActive: true });
+				
+				// Import trực tiếp từ module priceMonitor
+				const { priceCache, apiCallCount } = require('./services/priceMonitor');
+				const cacheInfo = Object.keys(priceCache || {}).length;
+				
+				const message = `${status}\n\n` +
+					`🔄 Thông tin hệ thống:\n` +
+					`- Số thông báo đang hoạt động: ${activeNotifications.length}\n` +
+					`- Token đang được cache: ${cacheInfo}\n` +
+					`- Số lần gọi API trong chu kỳ hiện tại: ${apiCallCount || 0}/10\n` +
+					`- Tần suất kiểm tra: 30 giây/lần\n\n` +
+					`⏱️ Thời gian hiện tại server: ${new Date().toLocaleString('vi-VN')}`;
+					
+				ctx.reply(message);
+			} catch (error) {
+				console.error('[ERROR] Lỗi khi lấy thông tin chi tiết:', error);
+				ctx.reply('❌ Đã xảy ra lỗi khi lấy thông tin chi tiết.');
+			}
+		});
+
+		// Thêm lệnh debug để gửi thông báo test 
+		bot.command('debugnotify', async (ctx) => {
+			try {
+				const userId = ctx.from.id;
+				await ctx.reply('Đang gửi thông báo test...');
+				
+				// Import trực tiếp AlertType từ module notification
+				const { AlertType } = require('./models/notification');
+				
+				// Gửi thông báo test
+				const { sendNotification } = require('./services/priceMonitor');
+				await sendNotification(
+					bot, 
+					userId, 
+					'TEST', 
+					99.99, 
+					88.88, 
+					AlertType.ABOVE
+				);
+				
+				ctx.reply('✅ Đã gửi thông báo test thành công!');
+			} catch (error: any) { // Thêm kiểu any cho error hoặc sử dụng type assertion
+				console.error('[DEBUG] Lỗi khi gửi thông báo test:', error);
+				ctx.reply(`❌ Lỗi khi gửi thông báo test: ${error?.message || 'Không xác định'}`);
+			}
 		});
 
 		// Xử lý tin nhắn thông thường
