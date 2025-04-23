@@ -8,9 +8,12 @@ import {
 } from './controllers/notification';
 import { UserContext, ConversationState } from './models/userContext';
 import { AlertType } from './models/notification';
-import { getTokenNotificationsFromGist } from './controllers/gist';
-import { initializeGist } from './controllers/initGist';
-import { startPriceMonitoring, checkPrices } from './services/priceMonitor';
+import {
+	startPriceMonitoring,
+	checkPrices,
+	stopPriceMonitoring,
+	isMonitoringActive,
+} from './services/priceMonitor';
 
 // Biến để kiểm tra trạng thái của bot
 let isBotRunning = false;
@@ -128,44 +131,6 @@ const startBot = async () => {
 			}
 		});
 
-		// Thêm lệnh /listgist để hiển thị dữ liệu từ GitHub Gist
-		bot.command('listgist', async (ctx) => {
-			try {
-				const tokens = await getTokenNotificationsFromGist();
-
-				if (tokens.length === 0) {
-					ctx.reply('Không có dữ liệu thông báo nào trong GitHub Gist.');
-					return;
-				}
-
-				let message = 'Danh sách thông báo trong GitHub Gist:\n\n';
-
-				tokens.forEach((token, index) => {
-					message += `${index + 1}. ${token.name} (${token.id})\n`;
-					message += `   Ngưỡng: ${token.threshold} (${token.type === 'above' ? 'vượt trên' : 'dưới'})\n`;
-					message += `   ID Telegram: ${token.idTelegram || 'Không có'}\n\n`;
-				});
-
-				ctx.reply(message);
-			} catch (error) {
-				console.error('Lỗi khi lấy dữ liệu từ Gist:', error);
-				ctx.reply('Đã xảy ra lỗi khi lấy dữ liệu từ GitHub Gist.');
-			}
-		});
-
-		// Thêm lệnh /initgist để khởi tạo Gist với dữ liệu mẫu
-		bot.command('initgist', async (ctx) => {
-			try {
-				await initializeGist();
-				ctx.reply(
-					'Đã khởi tạo/cập nhật GitHub Gist với dữ liệu mẫu thành công.'
-				);
-			} catch (error) {
-				console.error('Lỗi khi khởi tạo Gist:', error);
-				ctx.reply('Đã xảy ra lỗi khi khởi tạo GitHub Gist.');
-			}
-		});
-
 		// Thêm lệnh /forceprice để kiểm tra luồng xử lý giá
 		bot.command('forceprice', async (ctx) => {
 			try {
@@ -201,6 +166,69 @@ const startBot = async () => {
 				console.error('[ERROR] Lỗi khi kiểm tra giá thủ công:', error);
 				ctx.reply('Đã xảy ra lỗi trong quá trình kiểm tra giá.');
 			}
+		});
+
+		// Thêm lệnh để dừng service theo dõi giá
+		bot.command('stopmonitor', async (ctx) => {
+			try {
+				// Kiểm tra quyền admin (tuỳ chọn)
+				const userId = ctx.from.id;
+				// Có thể thêm kiểm tra quyền admin ở đây nếu cần
+
+				if (!isMonitoringActive()) {
+					ctx.reply('⚠️ Service theo dõi giá không hoạt động.');
+					return;
+				}
+
+				const success = stopPriceMonitoring();
+
+				if (success) {
+					ctx.reply('✅ Đã dừng service theo dõi giá thành công.');
+					console.log(`[ADMIN] User ${userId} đã dừng service theo dõi giá.`);
+				} else {
+					ctx.reply('❌ Không thể dừng service theo dõi giá.');
+				}
+			} catch (error) {
+				console.error('[ERROR] Lỗi khi dừng service theo dõi giá:', error);
+				ctx.reply('Đã xảy ra lỗi khi dừng service.');
+			}
+		});
+
+		// Thêm lệnh để khởi động lại service theo dõi giá
+		bot.command('startmonitor', async (ctx) => {
+			try {
+				// Kiểm tra quyền admin (tuỳ chọn)
+				const userId = ctx.from.id;
+				// Có thể thêm kiểm tra quyền admin ở đây nếu cần
+
+				if (isMonitoringActive()) {
+					ctx.reply('⚠️ Service theo dõi giá đã đang hoạt động.');
+					return;
+				}
+
+				startPriceMonitoring(bot);
+
+				if (isMonitoringActive()) {
+					ctx.reply('✅ Đã khởi động service theo dõi giá thành công.');
+					console.log(
+						`[ADMIN] User ${userId} đã khởi động service theo dõi giá.`
+					);
+				} else {
+					ctx.reply('❌ Không thể khởi động service theo dõi giá.');
+				}
+			} catch (error) {
+				console.error('[ERROR] Lỗi khi khởi động service theo dõi giá:', error);
+				ctx.reply('Đã xảy ra lỗi khi khởi động service.');
+			}
+		});
+
+		// Thêm lệnh để kiểm tra trạng thái service theo dõi giá
+		bot.command('monitorstatus', (ctx) => {
+			const status = isMonitoringActive()
+				? '✅ Service theo dõi giá đang HOẠT ĐỘNG'
+				: '❌ Service theo dõi giá đang DỪNG';
+
+			ctx.reply(status);
 		});
 
 		// Xử lý tin nhắn thông thường
@@ -255,8 +283,7 @@ const startBot = async () => {
 						ctx.reply(
 							`✅ Đã thiết lập thành công thông báo cho ${userContext.setupData.tokenSymbol}!\n` +
 								`Bạn sẽ nhận được thông báo khi giá ${alertType === AlertType.ABOVE ? 'vượt quá' : 'giảm xuống dưới'} ${price}.\n` +
-								`Dữ liệu đã được lưu vào MongoDB.\n` +
-								`Ghi chú: Nếu bạn đã cấu hình GitHub Gist, dữ liệu sẽ được đồng bộ (nếu token hợp lệ).`
+								`Dữ liệu đã được lưu vào MongoDB.`
 						);
 
 						userContext.reset();

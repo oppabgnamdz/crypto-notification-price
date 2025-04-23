@@ -1,5 +1,4 @@
 import Notification, { AlertType, INotification } from '../models/notification';
-import { addNotificationToGist } from './gist';
 
 // Interface cho dữ liệu tạo thông báo mới
 interface CreateNotificationData {
@@ -16,17 +15,6 @@ export const createNotification = async (
 	try {
 		const notification = new Notification(data);
 		const savedNotification = await notification.save();
-
-		try {
-			// Thêm thông báo vào GitHub Gist - bất kỳ lỗi nào cũng không ảnh hưởng đến luồng chính
-			await addNotificationToGist(savedNotification);
-		} catch (gistError) {
-			// Chỉ ghi log lỗi, không throw lỗi hay ảnh hưởng đến kết quả lưu MongoDB
-			console.error(
-				'Lỗi khi đồng bộ với GitHub Gist (dữ liệu đã được lưu vào MongoDB):',
-				gistError
-			);
-		}
 
 		return savedNotification;
 	} catch (error) {

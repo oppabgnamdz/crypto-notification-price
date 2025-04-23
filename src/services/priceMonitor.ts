@@ -29,6 +29,10 @@ let lastResetTime = Date.now();
 const API_RATE_LIMIT = 10;
 const API_RATE_WINDOW = 60 * 1000; // 1 phút
 
+// Biến để theo dõi trạng thái của service
+let monitoringActive = false;
+let monitoringIntervalId: NodeJS.Timeout | null = null;
+
 // Hàm để lấy giá hiện tại của token từ CoinGecko API
 const getTokenPrice = async (tokenId: string): Promise<number | null> => {
 	// Kiểm tra cache trước
@@ -145,6 +149,12 @@ const sendNotification = async (
 
 // Hàm chính để theo dõi giá và kiểm tra các notification
 export const startPriceMonitoring = (bot: Telegraf): void => {
+	// Nếu đã đang chạy, không khởi động lại
+	if (monitoringActive) {
+		console.log('[MONITOR] Service đã đang chạy. Bỏ qua lệnh khởi động.');
+		return;
+	}
+
 	// Thêm logs ban đầu mạnh mẽ hơn để đảm bảo rằng hàm được gọi
 	console.log('\n=================================================');
 	console.log('🔄 KHỞI ĐỘNG THEO DÕI GIÁ TOKEN');
@@ -154,24 +164,46 @@ export const startPriceMonitoring = (bot: Telegraf): void => {
 	);
 	console.log('[MONITOR] Bắt đầu vòng lặp kiểm tra đầu tiên...');
 
+	// Đánh dấu service đang hoạt động
+	monitoringActive = true;
+
 	// Thực hiện kiểm tra ngay lập tức khi khởi động
 	setTimeout(async () => {
 		await checkPrices(bot);
 	}, 1000);
 
 	// Thiết lập interval để chạy kiểm tra mỗi 30 giây
-	const intervalId = setInterval(async () => {
+	monitoringIntervalId = setInterval(async () => {
 		await checkPrices(bot);
 	}, 30000); // 30 giây
 
 	// Xử lý khi ứng dụng kết thúc
 	const cleanup = () => {
-		clearInterval(intervalId);
-		console.log('[MONITOR] Đã dừng theo dõi giá token');
+		stopPriceMonitoring();
 	};
 
 	process.on('SIGINT', cleanup);
 	process.on('SIGTERM', cleanup);
+};
+
+// Hàm để dừng việc theo dõi giá
+export const stopPriceMonitoring = (): boolean => {
+	if (!monitoringActive || !monitoringIntervalId) {
+		console.log('[MONITOR] Service không hoạt động, không cần dừng.');
+		return false;
+	}
+
+	clearInterval(monitoringIntervalId);
+	monitoringIntervalId = null;
+	monitoringActive = false;
+
+	console.log('[MONITOR] Đã dừng theo dõi giá token.');
+	return true;
+};
+
+// Hàm để kiểm tra trạng thái
+export const isMonitoringActive = (): boolean => {
+	return monitoringActive;
 };
 
 // Tách hàm kiểm tra giá thành một hàm riêng biệt để dễ quản lý
